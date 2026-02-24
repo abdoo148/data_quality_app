@@ -1,181 +1,229 @@
 import streamlit as st
 import pandas as pd
-import io
+import plotly.express as px
 
 # ==========================================
-# إعدادات الصفحة الأساسية
+# 1. إعدادات الصفحة والتصميم (UI/UX)
 # ==========================================
-st.set_page_config(
-    page_title="مُقيّم جودة البيانات الذكي",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="المُقيّم الذكي V2", page_icon="✨", layout="wide")
 
-# إضافة بعض التنسيقات (CSS) لتحسين المظهر ودعم الاتجاه من اليمين لليسار (RTL) بشكل أفضل
+# CSS مخصص لتحسين الواجهة ودعم اللغة العربية (RTL) والألوان
 st.markdown("""
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap');
+    * { font-family: 'Tajawal', sans-serif; }
     body { direction: RTL; text-align: right; }
-    .stMetric { background-color: #f0f2f6; padding: 15px; border-radius: 10px; }
+    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
+        font-size: 1.2rem;
+        font-weight: bold;
+    }
+    .metric-card {
+        background: linear-gradient(135deg, #f6d365 0%, #fda085 100%);
+        padding: 20px;
+        border-radius: 15px;
+        color: white;
+        text-align: center;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .metric-card h3 { margin: 0; font-size: 1.5rem; }
+    .metric-card h1 { margin: 10px 0 0 0; font-size: 3rem; }
     </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# عنوان التطبيق والمقدمة
+# 2. القائمة الجانبية (رفع الملفات والإعدادات)
 # ==========================================
-st.title("📊 تطبيق التقييم العميق لجودة البيانات")
-st.markdown("هذا التطبيق يساعدك على تحليل جودة بياناتك ليس فقط آلياً، بل **بناءً على فهمك لقواعد العمل (Business Rules)** الخاصة ببياناتك.")
-
-# ==========================================
-# دالة مساعدة لتحميل الملفات
-# ==========================================
-@st.cache_data
-def load_data(uploaded_file):
-    try:
-        if uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(uploaded_file)
-        elif uploaded_file.name.endswith(('.xls', '.xlsx')):
-            df = pd.read_excel(uploaded_file)
-        else:
-            return None
-        return df
-    except Exception as e:
-        st.error(f"حدث خطأ أثناء قراءة الملف: {e}")
-        return None
-
-# ==========================================
-# المرحلة الأولى: رفع الملف
-# ==========================================
-st.header("1. رفع ملف البيانات 📁")
-uploaded_file = st.file_uploader("قم برفع ملف البيانات (CSV أو Excel)", type=['csv', 'xlsx', 'xls'])
-
-if uploaded_file is not None:
-    # قراءة البيانات
-    df = load_data(uploaded_file)
+with st.sidebar:
+    st.image("https://cdn-icons-png.flaticon.com/512/2875/2875071.png", width=100)
+    st.title("إعدادات البيانات")
+    uploaded_file = st.file_uploader("📁 ارفع ملفك هنا (CSV/Excel)", type=['csv', 'xlsx'])
     
-    if df is not None:
-        st.success(f"تم تحميل الملف بنجاح! يحتوي الملف على {df.shape[0]} صف و {df.shape[1]} عمود.")
-        
-        with st.expander("👀 نظرة سريعة على عينة من البيانات"):
-            st.dataframe(df.head())
+    st.markdown("---")
+    st.info("💡 **كيف يعمل التطبيق؟**\n1. ارفع الملف\n2. استكشف البيانات\n3. ضع القواعد\n4. احصل على التقرير التفاعلي")
 
-        # ==========================================
-        # المرحلة الثانية: الأسئلة التفاعلية (قواعد العمل)
-        # ==========================================
-        st.header("2. تحديد معايير جودة البيانات 📝")
-        st.markdown("يرجى الإجابة على الأسئلة التالية لتحديد معايير الجودة الخاصة بهذه البيانات:")
+@st.cache_data
+def load_data(file):
+    if file.name.endswith('.csv'): return pd.read_csv(file)
+    else: return pd.read_excel(file)
+
+# ==========================================
+# 3. واجهة التطبيق الرئيسية (التبويبات)
+# ==========================================
+if uploaded_file is None:
+    st.markdown("<h1 style='text-align: center; color: #888; margin-top: 100px;'>يرجى رفع ملف بيانات من القائمة الجانبية للبدء 👈</h1>", unsafe_allow_html=True)
+else:
+    df = load_data(uploaded_file)
+    columns = df.columns.tolist()
+    numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
+    # استخراج الأعمدة النصية التي تحتوي على تصنيفات (أقل من 20 قيمة فريدة)
+    cat_cols = [c for c in df.columns if df[c].dtype == 'object' and df[c].nunique() < 20]
+
+    st.title(f"✨ تحليل بيانات: {uploaded_file.name}")
+    
+    # إنشاء التبويبات (Tabs)
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "👁️ 1. نظرة عامة", 
+        "📋 2. القواعد الأساسية", 
+        "🧠 3. القواعد المترابطة (متقدم)", 
+        "🎯 4. لوحة النتائج"
+    ])
+
+    # ---------------------------------------------------------
+    # التبويب الأول: نظرة عامة
+    # ---------------------------------------------------------
+    with tab1:
+        st.header("استكشاف سريع للبيانات")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("إجمالي الصفوف", f"{len(df):,}")
+        col2.metric("إجمالي الأعمدة", len(columns))
+        col3.metric("عدد الخلايا الفارغة الكلي", df.isnull().sum().sum())
         
-        columns = df.columns.tolist()
-        numeric_columns = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
+        st.dataframe(df.head(10), use_container_width=True)
+
+    # ---------------------------------------------------------
+    # التبويب الثاني: القواعد الأساسية
+    # ---------------------------------------------------------
+    with tab2:
+        st.header("إعدادات الجودة الأساسية")
+        col_a, col_b = st.columns(2)
         
-        # إنشاء نموذج (Form) لجمع إجابات المستخدم
-        with st.form("dq_rules_form"):
-            st.subheader("معيار التفرد (Uniqueness)")
-            # السؤال الأول: المعرف الفريد
-            primary_key = st.selectbox(
-                "ما هو العمود الذي يمثل المعرّف الفريد لكل صف (مثل: رقم الهوية، كود المنتج) ولا يجب أن يتكرر أبداً؟",
-                options=["لا يوجد"] + columns
-            )
+        with col_a:
+            st.subheader("🔑 التفرد (Uniqueness)")
+            primary_key = st.selectbox("اختر المعرف الفريد (الذي لا يجب أن يتكرر):", ["بدون تحديد"] + columns)
             
-            st.subheader("معيار الاكتمال (Completeness)")
-            # السؤال الثاني: الأعمدة الإلزامية
-            mandatory_columns = st.multiselect(
-                "ما هي الأعمدة الإلزامية التي يُمنع منعاً باتاً أن تكون فارغة (Null/Empty)؟",
-                options=columns
-            )
-            
-            st.subheader("معيار الصلاحية (Validity)")
-            # السؤال الثالث: القيم السالبة (للأعمدة الرقمية فقط)
-            if numeric_columns:
-                positive_only_columns = st.multiselect(
-                    "هل هناك أعمدة رقمية يجب أن تكون قيمها موجبة دائماً (مثل: السعر، العمر، الكمية)؟",
-                    options=numeric_columns
+        with col_b:
+            st.subheader("📝 الاكتمال (Completeness)")
+            mandatory_cols = st.multiselect("اختر الأعمدة الإلزامية (لا تقبل الفراغ):", columns)
+
+        st.markdown("---")
+        st.subheader("🔢 النطاق المنطقي للأرقام")
+        if numeric_cols:
+            range_col = st.selectbox("اختر عموداً رقمياً لتحديد نطاقه المسموح:", ["بدون تحديد"] + numeric_cols)
+            if range_col != "بدون تحديد":
+                min_val, max_val = st.slider(
+                    f"حدد النطاق المسموح لـ {range_col}", 
+                    float(df[range_col].min()), float(df[range_col].max()), 
+                    (float(df[range_col].min()), float(df[range_col].max()))
                 )
-            else:
-                positive_only_columns = []
-                st.info("لا توجد أعمدة رقمية في هذا الملف لتطبيق هذا المعيار.")
-                
-            # زر بدء التحليل
-            analyze_button = st.form_submit_button("🚀 بدء التحليل العميق بناءً على إجاباتي")
+        else:
+            range_col = "بدون تحديد"
+            st.info("لا توجد أعمدة رقمية في الملف.")
 
-        # ==========================================
-        # المرحلة الثالثة: التحليل العميق واستخراج النتائج
-        # ==========================================
-        if analyze_button:
-            st.markdown("---")
-            st.header("3. تقرير جودة البيانات التفصيلي 📈")
+    # ---------------------------------------------------------
+    # التبويب الثالث: القواعد المنطقية المترابطة (الجديد)
+    # ---------------------------------------------------------
+    with tab3:
+        st.header("بناء قواعد عمل معقدة ومترابطة")
+        
+        col_c, col_d = st.columns(2)
+        
+        # 1. القيم المسموحة (Categorical Logic)
+        with col_c:
+            st.subheader("🏷️ تقييد القيم النصية")
+            if cat_cols:
+                target_cat_col = st.selectbox("اختر عمود تصنيفي (مثال: الحالة، الجنس، القسم):", ["بدون تحديد"] + cat_cols)
+                if target_cat_col != "بدون تحديد":
+                    unique_vals = df[target_cat_col].dropna().unique().tolist()
+                    allowed_vals = st.multiselect(f"ما هي القيم الصحيحة فقط لعمود ({target_cat_col})؟", unique_vals, default=unique_vals)
+            else:
+                target_cat_col = "بدون تحديد"
+                st.info("لا توجد أعمدة تصنيفية مناسبة في الملف.")
+
+        # 2. القاعدة الشرطية المزدوجة (If This Then That)
+        with col_d:
+            st.subheader("🔗 الارتباط الشرطي بين عمودين")
+            st.write("مثال: **إذا** كان عمود [الحالة] يساوي [مغلق] **فإن** عمود [تاريخ الإغلاق] يجب أن يكون ممتلئاً.")
             
-            # تهيئة متغيرات لحساب النقاط (Scoring)
+            enable_cross_logic = st.checkbox("تفعيل القاعدة الشرطية")
+            if enable_cross_logic:
+                cond_col = st.selectbox("إذا كان عمود (الشرط):", columns, key="cond_col")
+                cond_val = st.selectbox("يساوي القيمة:", df[cond_col].dropna().unique().tolist(), key="cond_val")
+                target_cond_col = st.selectbox("فإن عمود (النتيجة) يجب ألا يكون فارغاً:", columns, key="target_cond_col")
+
+    # ---------------------------------------------------------
+    # التبويب الرابع: لوحة النتائج التفاعلية
+    # ---------------------------------------------------------
+    with tab4:
+        st.header("📊 التقرير النهائي لجودة البيانات")
+        analyze_btn = st.button("🚀 تشغيل محرك التحليل الآن", use_container_width=True, type="primary")
+        
+        if analyze_btn:
             total_rows = len(df)
-            issues_found = False
+            errors = {} # لجمع ملخص الأخطاء
             
-            # 1. تحليل التفرد (Uniqueness)
-            if primary_key != "لا يوجد":
-                st.subheader(f"🔍 تحليل التفرد لعمود: `{primary_key}`")
-                duplicated_rows = df[df.duplicated(subset=[primary_key], keep=False)]
-                duplicate_count = len(duplicated_rows)
+            with st.spinner('جاري تحليل البيانات ومعالجة القواعد المنطقية...'):
                 
-                if duplicate_count > 0:
-                    uniqueness_score = ((total_rows - duplicate_count) / total_rows) * 100
-                    st.warning(f"تم العثور على {duplicate_count} صف يحتوي على قيم مكررة في عمود المعرف الفريد!")
-                    st.metric("نسبة التفرد (Uniqueness Score)", f"{uniqueness_score:.1f}%")
-                    with st.expander("عرض السجلات المكررة"):
-                        st.dataframe(duplicated_rows.sort_values(by=primary_key))
-                    issues_found = True
-                else:
-                    st.success("ممتاز! لا يوجد أي تكرار في عمود المعرف الفريد. (نسبة التفرد: 100%)")
-            
-            # 2. تحليل الاكتمال (Completeness)
-            if mandatory_columns:
-                st.subheader("🔍 تحليل الاكتمال للأعمدة الإلزامية")
+                # 1. فحص التفرد
+                if primary_key != "بدون تحديد":
+                    dup_mask = df.duplicated(subset=[primary_key], keep=False)
+                    if dup_mask.sum() > 0:
+                        errors['التكرار'] = df[dup_mask]
                 
-                # البحث عن الصفوف التي تحتوي على قيم فارغة في الأعمدة المحددة
-                missing_data_mask = df[mandatory_columns].isnull().any(axis=1)
-                missing_rows = df[missing_data_mask]
-                missing_count = len(missing_rows)
-                
-                if missing_count > 0:
-                    completeness_score = ((total_rows - missing_count) / total_rows) * 100
-                    st.warning(f"تم العثور على {missing_count} صف يحتوي على بيانات مفقودة في الأعمدة الإلزامية!")
-                    st.metric("نسبة الاكتمال (Completeness Score)", f"{completeness_score:.1f}%")
-                    
-                    # تفصيل الأعمدة المفقودة
-                    missing_stats = df[mandatory_columns].isnull().sum()
-                    missing_stats = missing_stats[missing_stats > 0]
-                    st.write("تفصيل النواقص حسب العمود:")
-                    st.bar_chart(missing_stats)
-                    
-                    with st.expander("عرض السجلات التي بها بيانات إلزامية مفقودة"):
-                        st.dataframe(missing_rows)
-                    issues_found = True
-                else:
-                    st.success("رائع! جميع الأعمدة الإلزامية مكتملة بنسبة 100%.")
+                # 2. فحص الاكتمال
+                if mandatory_cols:
+                    miss_mask = df[mandatory_cols].isnull().any(axis=1)
+                    if miss_mask.sum() > 0:
+                        errors['بيانات مفقودة'] = df[miss_mask]
 
-            # 3. تحليل الصلاحية المنطقية (Validity - Positive Values)
-            if positive_only_columns:
-                st.subheader("🔍 تحليل صلاحية الأرقام (القيم الموجبة فقط)")
-                
-                invalid_rows_list = []
-                for col in positive_only_columns:
-                    # استخراج الصفوف التي تحتوي على قيم أصغر من الصفر
-                    invalid = df[df[col] < 0]
-                    if not invalid.empty:
-                        invalid_rows_list.append((col, invalid))
-                
-                if invalid_rows_list:
-                    st.error("تم العثور على قيم سالبة غير منطقية بناءً على تحديدك!")
-                    for col, invalid_df in invalid_rows_list:
-                        st.write(f"- عمود `{col}` يحتوي على **{len(invalid_df)}** قيمة سالبة.")
-                        with st.expander(f"عرض القيم السالبة في {col}"):
-                            st.dataframe(invalid_df)
-                    issues_found = True
-                else:
-                    st.success("تم التحقق! جميع القيم في الأعمدة المحددة موجبة ومنطقية بنسبة 100%.")
+                # 3. فحص النطاق الرقمي
+                if range_col != "بدون تحديد":
+                    range_mask = (df[range_col] < min_val) | (df[range_col] > max_val)
+                    if range_mask.sum() > 0:
+                        errors[f'خارج النطاق ({range_col})'] = df[range_mask]
 
-            # الخلاصة النهائية
-            st.markdown("---")
-            if not issues_found:
+                # 4. فحص القيم المسموحة
+                if cat_cols and target_cat_col != "بدون تحديد" and allowed_vals:
+                    cat_mask = ~df[target_cat_col].isin(allowed_vals) & df[target_cat_col].notnull()
+                    if cat_mask.sum() > 0:
+                        errors['قيم غير مسموحة'] = df[cat_mask]
+
+                # 5. فحص الارتباط الشرطي
+                if enable_cross_logic:
+                    cross_mask = (df[cond_col] == cond_val) & (df[target_cond_col].isnull())
+                    if cross_mask.sum() > 0:
+                        errors['مخالفة الشرط المترابط'] = df[cross_mask]
+
+            # عرض النتائج
+            if not errors:
+                st.success("🎉 ممتاااااز! بياناتك نظيفة تماماً وتتوافق مع جميع القواعد المعقدة التي حددتها.")
                 st.balloons()
-                st.success("🎉 تهانينا! بناءً على المعايير التي حددتها، بياناتك في حالة ممتازة وتخلو من الأخطاء الحرجة.")
             else:
-                st.info("💡 **نصيحة:** يرجى مراجعة السجلات المعروضة أعلاه وتصحيحها في الملف الأصلي لضمان جودة بياناتك قبل استخدامها في التحليلات أو النماذج.")
+                # حساب درجة الجودة العامة
+                total_errors = sum([len(e) for e in errors.values()])
+                quality_score = max(0, 100 - ((total_errors / (total_rows * max(len(errors), 1))) * 100))
+                
+                # عرض بطاقة النتيجة
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h3>مؤشر جودة البيانات (Data Quality Score)</h3>
+                    <h1>{quality_score:.1f}%</h1>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                # عرض رسم بياني للأخطاء
+                error_summary = pd.DataFrame({
+                    'نوع الخطأ': list(errors.keys()),
+                    'عدد الصفوف المتأثرة': [len(e) for e in errors.values()]
+                })
+                
+                fig = px.bar(error_summary, x='نوع الخطأ', y='عدد الصفوف المتأثرة', 
+                             color='نوع الخطأ', title="توزيع أخطاء جودة البيانات", text_auto=True)
+                fig.update_layout(showlegend=False, font=dict(family="Tajawal"))
+                st.plotly_chart(fig, use_container_width=True)
+
+                # عرض التفاصيل
+                st.subheader("🔍 تفاصيل السجلات التي تحتوي على أخطاء:")
+                for err_name, err_df in errors.items():
+                    with st.expander(f"🔴 {err_name} ({len(err_df)} سجل)"):
+                        st.dataframe(err_df, use_container_width=True)
+                        
+                        # زر لتحميل الأخطاء كملف CSV
+                        csv = err_df.to_csv(index=False).encode('utf-8-sig')
+                        st.download_button(
+                            label="📥 تحميل هذه السجلات لتصحيحها",
+                            data=csv,
+                            file_name=f"errors_{err_name}.csv",
+                            mime="text/csv"
+                        )
