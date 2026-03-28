@@ -1,87 +1,56 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import os
-import requests
 from fpdf import FPDF
-from arabic_reshaper import reshape
-from bidi.algorithm import get_display
 
 # ==========================================
-# 0. دوال مساعدة (تحميل الخط العربي وتوليد PDF)
+# 0. دوال مساعدة (توليد PDF باللغة الإنجليزية)
 # ==========================================
-@st.cache_resource
-def ensure_arabic_font():
-    """تقوم هذه الدالة بتحميل خط عربي ليدعمه ملف الـ PDF إذا لم يكن موجوداً"""
-    font_path = "Tajawal-Regular.ttf"
-    font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/tajawal/Tajawal-Regular.ttf"
-    
-    if not os.path.exists(font_path):
-        try:
-            response = requests.get(font_url)
-            response.raise_for_status()
-            with open(font_path, "wb") as f:
-                f.write(response.content)
-        except Exception as e:
-            st.warning(f"تعذر تحميل الخط العربي، قد لا يظهر النص في الـ PDF بشكل صحيح. {e}")
-    return font_path
-
-def process_arabic(text):
-    """تهيئة النص العربي ليظهر متصلاً ومن اليمين لليسار في الـ PDF"""
-    reshaped_text = reshape(str(text))
-    return get_display(reshaped_text)
-
 def create_pdf(quality_score, error_summary, total_rows):
-    """إنشاء ملف PDF يحتوي على ملخص الأخطاء"""
+    """إنشاء ملف PDF يحتوي على ملخص الأخطاء بالإنجليزية لتفادي مشاكل الخطوط"""
     pdf = FPDF()
     pdf.add_page()
     
-    # تحميل الخط
-    font_path = ensure_arabic_font()
-    if os.path.exists(font_path):
-        pdf.add_font('Tajawal', '', font_path, uni=True)
-        pdf.set_font('Tajawal', size=16)
-    else:
-        pdf.set_font('Arial', size=16)
-
-    # عنوان التقرير
-    pdf.cell(0, 10, txt=process_arabic("تقرير تقييم جودة البيانات"), ln=1, align='C')
+    pdf.set_font('Arial', 'B', 16)
+    pdf.cell(0, 10, txt="Data Quality Assessment Report", ln=1, align='C')
     pdf.ln(10)
     
-    # ملخص سريع
-    if os.path.exists(font_path):
-        pdf.set_font('Tajawal', size=14)
-    
-    pdf.cell(0, 10, txt=process_arabic(f"إجمالي السجلات المفحوصة: {total_rows}"), ln=1, align='R')
-    pdf.cell(0, 10, txt=process_arabic(f"مؤشر الجودة العام: {quality_score:.1f}%"), ln=1, align='R')
+    pdf.set_font('Arial', '', 14)
+    pdf.cell(0, 10, txt=f"Total Analyzed Records: {total_rows}", ln=1, align='L')
+    pdf.cell(0, 10, txt=f"Overall Quality Score: {quality_score:.1f}%", ln=1, align='L')
     pdf.ln(10)
     
-    # إذا كان هناك أخطاء، قم برسم جدول
     if not error_summary.empty:
-        pdf.cell(0, 10, txt=process_arabic("تفاصيل الأخطاء المكتشفة:"), ln=1, align='R')
+        pdf.cell(0, 10, txt="Detected Errors Details:", ln=1, align='L')
         pdf.ln(5)
         
-        # إعدادات الجدول
-        if os.path.exists(font_path):
-            pdf.set_font('Tajawal', size=12)
-            
-        col_width_type = 120
-        col_width_count = 60
-        
-        # رأس الجدول
+        pdf.set_font('Arial', 'B', 12)
         pdf.set_fill_color(200, 220, 255)
-        # نستخدم align='C' للوسط
-        pdf.cell(col_width_type, 10, txt=process_arabic('نوع الخطأ'), border=1, align='C', fill=True)
-        pdf.cell(col_width_count, 10, txt=process_arabic('عدد السجلات'), border=1, ln=1, align='C', fill=True)
+        pdf.cell(130, 10, txt='Error Type', border=1, align='C', fill=True)
+        pdf.cell(60, 10, txt='Affected Records', border=1, ln=1, align='C', fill=True)
         
-        # صفوف الجدول
+        pdf.set_font('Arial', '', 12)
         for index, row in error_summary.iterrows():
-            err_type = process_arabic(row['نوع الخطأ'])
-            err_count = process_arabic(str(row['عدد الصفوف المتأثرة']))
-            pdf.cell(col_width_type, 10, txt=err_type, border=1, align='R')
-            pdf.cell(col_width_count, 10, txt=err_count, border=1, ln=1, align='C')
+            err_type = row['نوع الخطأ']
+            
+            # ترجمة أنواع الأخطاء للإنجليزية للتقرير
+            trans_dict = {
+                'التكرار في المعرف الفريد': 'Duplicated Primary Key',
+                'بيانات إلزامية مفقودة': 'Missing Mandatory Data',
+                'مخالفة الشرط المترابط': 'Cross-Logic Violation'
+            }
+            for k, v in trans_dict.items():
+                err_type = err_type.replace(k, v)
+                
+            if 'خارج النطاق المسموح' in err_type:
+                err_type = err_type.replace('خارج النطاق المسموح', 'Out of Allowed Range')
+            if 'قيم غير مسموحة في' in err_type:
+                err_type = err_type.replace('قيم غير مسموحة في', 'Invalid Values in')
+                
+            err_count = str(row['عدد الصفوف المتأثرة'])
+            pdf.cell(130, 10, txt=err_type, border=1, align='L')
+            pdf.cell(60, 10, txt=err_count, border=1, ln=1, align='C')
 
-    # إرجاع محتوى الـ PDF كـ Bytes
     return bytes(pdf.output())
 
 # ==========================================
@@ -173,7 +142,7 @@ else:
             
         with col_b:
             st.subheader("📝 الاكتمال (Completeness)")
-            mandatory_cols = st.multiselect("اختر الأعمدة الإلزامية (لا تقبل الفراغ):", columns)
+            mandatory_cols = st.multiselect("اختر الأعمدة الإلزامية (لا تقبل الفراغ):", columns, default=columns)
 
         st.markdown("---")
         st.subheader("🔢 النطاق المنطقي للأرقام")
@@ -200,7 +169,7 @@ else:
         with col_c:
             st.subheader("🏷️ تقييد القيم النصية")
             if cat_cols:
-                target_cat_col = st.selectbox("اختر عمود تصنيفي (مثال: الحالة، الجنس، القسم):", ["بدون تحديد"] + cat_cols)
+                target_cat_col = st.selectbox("اختر عمود تصنيفي (مثال: الحالة، الجنس، القسم):", ["بدون تحديد"] + cat_cols, index=1 if cat_cols else 0)
                 if target_cat_col != "بدون تحديد":
                     unique_vals = df[target_cat_col].dropna().unique().tolist()
                     allowed_vals = st.multiselect(f"ما هي القيم الصحيحة فقط لعمود ({target_cat_col})؟", unique_vals, default=unique_vals)
