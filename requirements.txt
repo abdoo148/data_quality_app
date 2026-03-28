@@ -2,3 +2,7 @@ streamlit
 pandas
 openpyxl
 plotly
+fpdf2
+arabic-reshaper
+python-bidi
+requests
