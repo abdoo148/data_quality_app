@@ -301,7 +301,7 @@ else:
                         if err_mask.sum() > 0: errors[f'تناقض: {c1} {op} {c2}'] = df[err_mask]
                     except: pass
 
-                for rule in st.session_state.dynamic_rules):
+                for rule in st.session_state.dynamic_rules:
                     rule_id = rule['id']
                     c_col, c_val, t_col = st.session_state[f"cond_col_{rule_id}"], st.session_state[f"cond_val_{rule_id}"], st.session_state[f"target_col_{rule_id}"]
                     cross_mask = (df[c_col] == c_val) & (df[t_col].isnull())
