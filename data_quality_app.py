@@ -89,15 +89,29 @@ with st.sidebar:
     st.title("إعدادات البيانات")
     uploaded_file = st.file_uploader("📁 ارفع ملفك (CSV/Excel)", type=['csv', 'xlsx'])
     
+    # --- الإضافة الجديدة: التعامل مع أوراق العمل (Sheets) ---
+    selected_sheet = None
+    if uploaded_file is not None and uploaded_file.name.endswith(('.xlsx', '.xls')):
+        try:
+            xls = pd.ExcelFile(uploaded_file)
+            sheet_names = xls.sheet_names
+            if len(sheet_names) > 1:
+                selected_sheet = st.selectbox("📑 اختر ورقة العمل (Sheet):", sheet_names)
+            else:
+                selected_sheet = sheet_names[0]
+        except Exception as e:
+            st.error("حدث خطأ في قراءة أوراق العمل.")
+    # --------------------------------------------------------
+    
     if st.button("🗑️ إعادة ضبط كل القواعد"):
         st.session_state.dynamic_rules = []
         st.session_state.compare_rules = []
         st.rerun()
 
 @st.cache_data
-def load_data(file):
+def load_data(file, sheet_name=None):
     if file.name.endswith('.csv'): return pd.read_csv(file)
-    else: return pd.read_excel(file)
+    else: return pd.read_excel(file, sheet_name=sheet_name)
 
 # ==========================================
 # 3. واجهة التطبيق
@@ -105,7 +119,7 @@ def load_data(file):
 if uploaded_file is None:
     st.info("يرجى رفع ملف بيانات من القائمة الجانبية للبدء 👈")
 else:
-    df = load_data(uploaded_file)
+    df = load_data(uploaded_file, selected_sheet)
     columns = df.columns.tolist()
     numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
     
@@ -138,7 +152,21 @@ else:
             'القيم المفقودة (%)': [(df[c].isnull().sum() / len(df) * 100).round(2) for c in columns],
             'القيم الفريدة': [df[c].nunique() for c in columns]
         })
-        st.dataframe(profile_df.style.background_gradient(subset=['القيم المفقودة (%)'], cmap='Reds'), use_container_width=True)
+        
+        # استبدال matplotlib بميزة ProgressColumn المدمجة من Streamlit
+        st.dataframe(
+            profile_df,
+            column_config={
+                "القيم المفقودة (%)": st.column_config.ProgressColumn(
+                    "القيم المفقودة (%)",
+                    help="نسبة الفراغات في العمود المئوية",
+                    format="%.2f%%",
+                    min_value=0,
+                    max_value=100,
+                )
+            },
+            use_container_width=True
+        )
 
         if numeric_cols:
             st.subheader("التوزيع الإحصائي (للأرقام)")
