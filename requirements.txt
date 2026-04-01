@@ -3,5 +3,4 @@ pandas
 plotly
 fpdf
 openpyxl
-kaleido==0.1.0.post1
-*(الإصدار `0.1.0.post1` من kaleido هو الأكثر استقراراً مع السحابة).*
+matplotlib
