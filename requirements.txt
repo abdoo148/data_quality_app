@@ -1,6 +1,7 @@
 streamlit
 pandas
-openpyxl
 plotly
 fpdf
-kaleido
+openpyxl
+kaleido==0.1.0.post1
+*(الإصدار `0.1.0.post1` من kaleido هو الأكثر استقراراً مع السحابة).*
