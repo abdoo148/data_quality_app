@@ -11,12 +11,12 @@ from fpdf import FPDF
 # 0. دوال مساعدة (توليد PDF والتعرف الذكي)
 # ==========================================
 def create_pdf(quality_score, error_summary, total_rows, error_chart=None):
-    """إنشاء ملف PDF يحتوي على ملخص الأخطاء ورسومات بيانية بالإنجليزية"""
+    """إنشاء ملف PDF مع معالجة ذكية للأخطاء والرسومات"""
     pdf = FPDF()
     pdf.add_page()
     
-    # Header - العنوان الرئيسي
-    pdf.set_fill_color(118, 75, 162) # اللون البنفسجي الخاص بالتطبيق
+    # Header - الهيدر الاحترافي
+    pdf.set_fill_color(118, 75, 162) 
     pdf.rect(0, 0, 210, 40, 'F')
     pdf.set_text_color(255, 255, 255)
     pdf.set_font('Arial', 'B', 24)
@@ -25,7 +25,7 @@ def create_pdf(quality_score, error_summary, total_rows, error_chart=None):
     pdf.set_text_color(0, 0, 0)
     pdf.ln(25)
     
-    # Executive Summary - الملخص التنفيذي
+    # 1. Executive Summary - الملخص التنفيذي
     pdf.set_font('Arial', 'B', 16)
     pdf.cell(0, 10, txt="1. Executive Summary", ln=1, align='L')
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
@@ -33,30 +33,40 @@ def create_pdf(quality_score, error_summary, total_rows, error_chart=None):
     
     pdf.set_font('Arial', '', 12)
     pdf.cell(0, 8, txt=f"Total Records Analyzed: {total_rows}", ln=1)
-    pdf.cell(0, 8, txt=f"Data Quality Score: {quality_score:.1f}%", ln=1)
+    pdf.cell(0, 8, txt=f"Overall Quality Score: {quality_score:.1f}%", ln=1)
     
-    # Progress Bar Shape - شكل شريط التقدم في PDF
+    # رسم شريط تقدم بصري بسيط داخل PDF بدون الحاجة لمكتبات خارجية
     pdf.ln(5)
     pdf.set_draw_color(200, 200, 200)
     pdf.rect(10, pdf.get_y(), 100, 5)
-    pdf.set_fill_color(0, 200, 0) if quality_score > 80 else pdf.set_fill_color(255, 0, 0)
-    pdf.rect(10, pdf.get_y(), quality_score if quality_score > 0 else 0.1, 5, 'F')
-    pdf.ln(10)
+    if quality_score > 80: pdf.set_fill_color(0, 200, 0) 
+    elif quality_score > 50: pdf.set_fill_color(255, 165, 0)
+    else: pdf.set_fill_color(220, 20, 60)
+    pdf.rect(10, pdf.get_y(), max(0.1, quality_score), 5, 'F')
+    pdf.ln(15)
     
-    # Charts Section - قسم الرسومات البيانية
+    # 2. Charts Section - معالجة الصورة بحذر (حل جذري للخطأ)
     if error_chart is not None:
         pdf.set_font('Arial', 'B', 16)
         pdf.cell(0, 10, txt="2. Visual Error Distribution", ln=1, align='L')
         pdf.line(10, pdf.get_y(), 200, pdf.get_y())
         pdf.ln(5)
         
-        # تحويل رسم Plotly إلى صورة وإضافتها
-        img_bytes = pio.to_image(error_chart, format="png", width=800, height=400)
-        img_buffer = io.BytesIO(img_bytes)
-        pdf.image(img_buffer, x=10, y=None, w=180)
-        pdf.ln(5)
+        try:
+            # محاولة توليد الصورة
+            img_bytes = pio.to_image(error_chart, format="png", width=800, height=400, engine="kaleido")
+            img_buffer = io.BytesIO(img_bytes)
+            pdf.image(img_buffer, x=15, y=None, w=180)
+            pdf.ln(5)
+        except Exception as e:
+            # في حال فشل Kaleido (كما في Streamlit Cloud)
+            pdf.set_font('Arial', 'I', 11)
+            pdf.set_text_color(150, 0, 0)
+            pdf.cell(0, 10, txt="[Notice: Graphical chart generation is not supported in this environment. Refer to the table below.]", ln=1)
+            pdf.set_text_color(0, 0, 0)
+            pdf.ln(5)
 
-    # Detailed Table - جدول التفاصيل
+    # 3. Detailed Table - جدول التفاصيل
     if not error_summary.empty:
         pdf.set_font('Arial', 'B', 16)
         pdf.cell(0, 10, txt="3. Detailed Error Summary", ln=1, align='L')
@@ -65,53 +75,46 @@ def create_pdf(quality_score, error_summary, total_rows, error_chart=None):
         
         pdf.set_font('Arial', 'B', 12)
         pdf.set_fill_color(230, 230, 230)
-        pdf.cell(130, 10, txt='Error Categorization', border=1, align='C', fill=True)
-        pdf.cell(60, 10, txt='Affected Rows', border=1, ln=1, align='C', fill=True)
+        pdf.cell(130, 10, txt='Error Type / Category', border=1, align='C', fill=True)
+        pdf.cell(60, 10, txt='Affected Records', border=1, ln=1, align='C', fill=True)
         
         pdf.set_font('Arial', '', 11)
-        for index, row in error_summary.iterrows():
-            err_type = str(row['نوع الخطأ'])
-            # ترجمة بسيطة للتقرير
-            if 'تكرار' in err_type: err_type = 'Uniqueness Violation'
-            elif 'مفقودة' in err_type: err_type = 'Missing Mandatory Values'
-            elif 'صيغة' in err_type: err_type = 'Pattern/Regex Mismatch'
-            elif 'تناقض' in err_type: err_type = 'Logical Contradiction'
-            else: err_type = 'Business Logic Error'
+        for _, row in error_summary.iterrows():
+            err_txt = str(row['نوع الخطأ'])
+            # ترجمة العناوين للإنجليزية للتقرير
+            if 'تكرار' in err_txt: err_txt = "Duplicated Primary Key"
+            elif 'مفقودة' in err_txt: err_txt = "Missing Mandatory Data"
+            elif 'صيغة' in err_txt: err_txt = "Invalid Data Format"
+            elif 'تناقض' in err_txt: err_txt = "Column Comparison Conflict"
+            elif 'شرط' in err_txt: err_txt = "Conditional Logic Violation"
             
-            pdf.cell(130, 10, txt=err_type, border=1)
+            pdf.cell(130, 10, txt=err_txt[:65], border=1)
             pdf.cell(60, 10, txt=str(row['عدد السجلات المتأثرة']), border=1, ln=1, align='C')
 
     return pdf.output().encode('latin-1')
 
 def suggest_primary_key(df):
-    """محرك ذكي لاقتراح المعرف الفريد بناءً على الاسم وخصائص البيانات"""
-    keywords = ['id', 'code', 'no', 'number', 'key', 'identifer', 'رقم', 'كود', 'معرف', 'هوية', 'سيريال']
-    columns = df.columns.tolist()
-    for col in columns:
-        col_lower = str(col).lower()
-        if any(kw in col_lower for kw in keywords):
-            if df[col].nunique() == len(df) and df[col].notnull().all():
-                return col
-    for col in columns:
-        if df[col].nunique() == len(df) and df[col].notnull().all():
-            return col
+    """محرك اقتراح المعرف الفريد"""
+    keywords = ['id', 'code', 'no', 'number', 'key', 'identifer', 'رقم', 'كود', 'معرف', 'هوية']
+    for col in df.columns:
+        if any(kw in str(col).lower() for kw in keywords):
+            if df[col].nunique() == len(df): return col
+    for col in df.columns:
+        if df[col].nunique() == len(df): return col
     return "بدون تحديد"
 
 # ==========================================
-# 1. إعدادات الصفحة وتهيئة المتغيرات
+# 1. إعدادات الصفحة والتصميم
 # ==========================================
 st.set_page_config(page_title="المُقيّم الذكي V4", page_icon="🚀", layout="wide")
 
-if 'dynamic_rules' not in st.session_state:
-    st.session_state.dynamic_rules = []
-if 'compare_rules' not in st.session_state:
-    st.session_state.compare_rules = []
+if 'dynamic_rules' not in st.session_state: st.session_state.dynamic_rules = []
+if 'compare_rules' not in st.session_state: st.session_state.compare_rules = []
 
 def add_rule(): st.session_state.dynamic_rules.append({"id": str(uuid.uuid4())})
-def remove_rule(rule_id): st.session_state.dynamic_rules = [r for r in st.session_state.dynamic_rules if r['id'] != rule_id]
-
+def remove_rule(rid): st.session_state.dynamic_rules = [r for r in st.session_state.dynamic_rules if r['id'] != rid]
 def add_compare_rule(): st.session_state.compare_rules.append({"id": str(uuid.uuid4())})
-def remove_compare_rule(rule_id): st.session_state.compare_rules = [r for r in st.session_state.compare_rules if r['id'] != rule_id]
+def remove_compare_rule(rid): st.session_state.compare_rules = [r for r in st.session_state.compare_rules if r['id'] != rid]
 
 st.markdown("""
     <style>
@@ -119,11 +122,8 @@ st.markdown("""
     * { font-family: 'Tajawal', sans-serif; }
     body { direction: RTL; text-align: right; }
     .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p { font-size: 1.1rem; font-weight: bold; }
-    .metric-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 15px; color: white; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-    .metric-card h3 { margin: 0; font-size: 1.5rem; }
-    .metric-card h1 { margin: 10px 0 0 0; font-size: 3rem; font-weight: bold; }
-    .rule-container { border: 1px solid #e0e0e0; padding: 15px; border-radius: 8px; margin-bottom: 10px; background-color: #f8f9fa; border-right: 4px solid #764ba2; }
-    div[data-testid="stExpander"] { direction: rtl; }
+    .metric-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 15px; color: white; text-align: center; }
+    .rule-container { border: 1px solid #e0e0e0; padding: 15px; border-radius: 8px; margin-bottom: 10px; background-color: #f8f9fa; border-right: 5px solid #764ba2; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -136,198 +136,169 @@ with st.sidebar:
     uploaded_file = st.file_uploader("📁 ارفع ملفك (CSV/Excel)", type=['csv', 'xlsx'])
     
     selected_sheet = None
-    if uploaded_file is not None and uploaded_file.name.endswith(('.xlsx', '.xls')):
+    if uploaded_file and uploaded_file.name.endswith(('.xlsx', '.xls')):
         try:
             xls = pd.ExcelFile(uploaded_file)
-            sheet_names = xls.sheet_names
-            if len(sheet_names) > 1:
-                selected_sheet = st.selectbox("📑 اختر ورقة العمل (Sheet):", sheet_names)
-            else:
-                selected_sheet = sheet_names[0]
-        except:
-            st.error("حدث خطأ في قراءة أوراق العمل.")
-    
-    if st.button("🗑️ إعادة ضبط كل القواعد"):
+            if len(xls.sheet_names) > 1:
+                selected_sheet = st.selectbox("📑 اختر ورقة العمل:", xls.sheet_names)
+            else: selected_sheet = xls.sheet_names[0]
+        except: st.error("خطأ في قراءة الأوراق.")
+
+    if st.button("🗑️ مسح كل القواعد"):
         st.session_state.dynamic_rules = []
         st.session_state.compare_rules = []
         st.rerun()
 
 @st.cache_data
-def load_data(file, sheet_name=None):
+def load_data(file, sheet):
     if file.name.endswith('.csv'): return pd.read_csv(file)
-    else: return pd.read_excel(file, sheet_name=sheet_name)
+    return pd.read_excel(file, sheet_name=sheet)
 
 # ==========================================
-# 3. واجهة التطبيق
+# 3. واجهة التطبيق الرئيسية
 # ==========================================
 if uploaded_file is None:
-    st.info("يرجى رفع ملف بيانات من القائمة الجانبية للبدء 👈")
+    st.info("يرجى رفع ملف بيانات للبدء 👈")
 else:
     df = load_data(uploaded_file, selected_sheet)
     columns = df.columns.tolist()
-    numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
     
-    st.title(f"🚀 تحليل ذكي لملف: {uploaded_file.name}")
-    
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "📊 1. التحليل الإحصائي (Profiling)", 
-        "🛡️ 2. القواعد الأساسية والصيغ", 
-        "🔗 3. القواعد المنطقية المترابطة", 
-        "🎯 4. لوحة النتائج"
-    ])
+    st.title(f"🚀 تحليل: {uploaded_file.name}")
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 1. التحليل الإحصائي", "🛡️ 2. القواعد والصيغ", "🔗 3. المنطق المترابط", "🎯 4. لوحة النتائج"])
 
     with tab1:
-        st.header("الفحص الإحصائي العميق للبيانات")
-        col1, col2, col3 = st.columns(3)
-        col1.metric("إجمالي السجلات", f"{len(df):,}")
-        col2.metric("إجمالي الأعمدة", len(columns))
-        col3.metric("الخلايا المفقودة كلياً", f"{df.isnull().sum().sum():,}")
-        
-        st.markdown("---")
-        st.subheader("تحليل جودة الأعمدة")
-        
-        profile_df = pd.DataFrame({
-            'العمود': columns,
-            'نوع البيانات': [str(df[c].dtype) for c in columns],
-            'القيم المفقودة (%)': [(df[c].isnull().sum() / len(df) * 100).round(2) for c in columns],
-            'القيم الفريدة': [df[c].nunique() for c in columns]
-        })
-        
-        st.dataframe(
-            profile_df,
-            column_config={
-                "القيم المفقودة (%)": st.column_config.ProgressColumn(
-                    "القيم المفقودة (%)", help="نسبة الفراغات في العمود المئوية",
-                    format="%.2f%%", min_value=0, max_value=100,
-                )
-            },
-            use_container_width=True
-        )
-
-        if numeric_cols:
-            st.subheader("التوزيع الإحصائي (للأرقام)")
-            selected_num_col = st.selectbox("اختر عموداً رقمياً لعرض توزيعه:", numeric_cols)
-            fig_hist = px.histogram(df, x=selected_num_col, marginal="box", title=f"توزيع البيانات في عمود: {selected_num_col}")
-            st.plotly_chart(fig_hist, use_container_width=True)
+        st.header("الفحص الإحصائي")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("إجمالي السجلات", f"{len(df):,}")
+        c2.metric("إجمالي الأعمدة", len(columns))
+        c3.metric("القيم المفقودة", f"{df.isnull().sum().sum():,}")
+        st.dataframe(df.head(10), use_container_width=True)
 
     with tab2:
         st.header("معايير الجودة الأساسية")
         col_a, col_b = st.columns(2)
         with col_a:
-            st.subheader("🔑 التفرد (Uniqueness)")
-            suggested_pk = suggest_primary_key(df)
-            options = ["بدون تحديد"] + columns
-            pk_index = options.index(suggested_pk) if suggested_pk in options else 0
-            primary_key = st.selectbox("اختر المعرف الفريد (ID):", options, index=pk_index)
-            if suggested_pk != "بدون تحديد": st.caption(f"✨ تم التعرف تلقائياً على `{suggested_pk}` كمعرف فريد.")
-            
+            pk_sugg = suggest_primary_key(df)
+            pk_idx = (columns.index(pk_sugg) + 1) if pk_sugg in columns else 0
+            primary_key = st.selectbox("🔑 المعرف الفريد (ID):", ["بدون تحديد"] + columns, index=pk_idx)
         with col_b:
-            st.subheader("📝 الاكتمال (Completeness)")
-            mandatory_cols = st.multiselect("الأعمدة الإلزامية التي يجب فحص اكتمالها:", columns, default=columns)
+            mandatory_cols = st.multiselect("📝 الأعمدة الإلزامية:", columns, default=columns)
 
         st.markdown("---")
-        st.subheader("أنماط التحقق من الصيغ (Pattern Validation)")
+        st.subheader("🛠️ التحقق من الأنماط (Pattern Validation)")
+        st.write("يدعم الآن اختيار عدة أعمدة في وقت واحد.")
+        
         regex_patterns = {
             "بريد إلكتروني (Email)": r'^[\w\.-]+@[\w\.-]+\.\w+$',
             "أرقام فقط (Digits)": r'^\d+$',
             "نصوص فقط (Letters)": r'^[a-zA-Zأ-ي\s]+$',
+            "تاريخ (YYYY-MM-DD)": r'^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$',
+            "تاريخ (DD/MM/YYYY)": r'^(0[1-9]|[12]\d|3[01])/(0[1-9]|1[0-2])/\d{4}$',
+            "تاريخ (MM-DD-YYYY)": r'^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])-\d{4}$'
         }
-        col_regex1, col_regex2 = st.columns(2)
-        with col_regex1: regex_col = st.selectbox("اختر العمود المطلوب فحص صيغته:", ["بدون تحديد"] + columns, key='regex_col')
-        with col_regex2: regex_type = st.selectbox("الصيغة المطلوبة:", list(regex_patterns.keys()), key='regex_type')
+        
+        c_r1, c_r2 = st.columns(2)
+        with c_r1: v_cols = st.multiselect("اختر الأعمدة للفحص:", columns, key="v_cols")
+        with c_r2: v_pattern = st.selectbox("الصيغة المطلوبة:", list(regex_patterns.keys()))
 
     with tab3:
         st.header("المحرك المنطقي المتقدم")
         st.subheader("أولاً: مقارنة الأعمدة")
-        st.button("➕ إضافة قاعدة مقارنة", on_click=add_compare_rule, type="secondary")
-        for index, rule in enumerate(st.session_state.compare_rules):
-            st.markdown(f"<div class='rule-container'>", unsafe_allow_html=True)
-            col1, col2, col3, col4 = st.columns([3, 2, 3, 1])
-            rule_id = rule['id']
-            with col1: st.selectbox("العمود الأول:", columns, key=f"comp1_{rule_id}")
-            with col2: st.selectbox("يجب أن يكون:", ["> (أكبر من)", "< (أصغر من)", "== (يساوي)", "!= (لا يساوي)"], key=f"op_{rule_id}")
-            with col3: st.selectbox("مقارنة بـ العمود الثاني:", columns, key=f"comp2_{rule_id}")
-            with col4:
-                st.write("")
-                st.button("❌", key=f"del_c_{rule_id}", on_click=remove_compare_rule, args=(rule_id,))
-            st.markdown("</div>", unsafe_allow_html=True)
+        st.button("➕ إضافة قاعدة مقارنة", on_click=add_compare_rule)
+        for r in st.session_state.compare_rules:
+            rid = r['id']
+            with st.container(border=True):
+                cl1, cl2, cl3, cl4 = st.columns([3, 2, 3, 1])
+                cl1.selectbox("العمود 1:", columns, key=f"c1_{rid}")
+                cl2.selectbox("يجب أن يكون:", [">", "<", "==", "!="], key=f"op_{rid}")
+                cl3.selectbox("مقارنة بـ 2:", columns, key=f"c2_{rid}")
+                cl4.button("🗑️", key=f"del_c_{rid}", on_click=remove_compare_rule, args=(rid,))
 
         st.markdown("---")
         st.subheader("ثانياً: الترابط الشرطي")
-        st.button("➕ إضافة قاعدة شرطية", on_click=add_rule, type="secondary")
-        for index, rule in enumerate(st.session_state.dynamic_rules):
-            st.markdown(f"<div class='rule-container'>", unsafe_allow_html=True)
-            col1, col2, col3, col4 = st.columns([3, 3, 3, 1])
-            rule_id = rule['id']
-            with col1: c_col = st.selectbox("إذا كان العمود:", columns, key=f"cond_col_{rule_id}")
-            with col2:
-                unique_vals = df[c_col].dropna().unique().tolist() if c_col else []
-                st.selectbox("يساوي القيمة:", unique_vals, key=f"cond_val_{rule_id}")
-            with col3: st.selectbox("فإن (النتيجة) يجب ألا يكون فارغاً:", columns, key=f"target_col_{rule_id}")
-            with col4:
-                st.write("")
-                st.button("❌", key=f"del_{rule_id}", on_click=remove_rule, args=(rule_id,))
-            st.markdown("</div>", unsafe_allow_html=True)
+        st.button("➕ إضافة قاعدة شرطية", on_click=add_rule)
+        for r in st.session_state.dynamic_rules:
+            rid = r['id']
+            with st.container(border=True):
+                r1_c1, r1_c2, r1_c3, r1_c4 = st.columns([3, 2, 3, 1])
+                c_col = r1_c1.selectbox("إذا كان العمود:", columns, key=f"cond_col_{rid}")
+                c_type = r1_c2.selectbox("الحالة:", ["يساوي قيمة", "فارغ (Empty)", "ليس فارغاً (Not Empty)"], key=f"cond_type_{rid}")
+                
+                if st.session_state[f"cond_type_{rid}"] == "يساوي قيمة":
+                    u_vals = df[c_col].dropna().unique().tolist() if c_col else []
+                    r1_c3.selectbox("القيمة:", u_vals, key=f"cond_val_{rid}")
+                else: r1_c3.info("فحص الحالة فقط")
+                
+                r1_c4.button("🗑️", key=f"del_r_{rid}", on_click=remove_rule, args=(rid,))
+                
+                r2_c1, r2_c2 = st.columns(2)
+                r2_c1.selectbox("فإن العمود النتيجة:", columns, key=f"target_col_{rid}")
+                r2_c2.selectbox("يجب أن يكون:", ["ليس فارغاً", "فارغاً"], key=f"target_type_{rid}")
 
     with tab4:
-        st.header("📊 التقرير النهائي لجودة البيانات")
-        analyze_btn = st.button("🚀 تشغيل محرك التحليل الشامل", use_container_width=True, type="primary")
-        
-        if analyze_btn:
-            total_rows = len(df)
-            errors = {} 
-            with st.spinner('جاري تحليل البيانات...'):
+        st.header("📊 لوحة النتائج")
+        if st.button("🚀 بدء التحليل الشامل", use_container_width=True, type="primary"):
+            total = len(df)
+            errs = {}
+            
+            with st.spinner('جاري التحليل...'):
+                # 1. تفرد
                 if primary_key != "بدون تحديد":
-                    dup_mask = df.duplicated(subset=[primary_key], keep=False)
-                    if dup_mask.sum() > 0: errors['تكرار في المعرف الفريد'] = df[dup_mask]
+                    dups = df[df.duplicated(subset=[primary_key], keep=False)]
+                    if not dups.empty: errs['تكرار في المعرف الفريد'] = dups
+                
+                # 2. اكتمال
                 if mandatory_cols:
-                    miss_mask = df[mandatory_cols].isnull().any(axis=1)
-                    if miss_mask.sum() > 0: errors['بيانات إلزامية مفقودة'] = df[miss_mask]
-                if regex_col != "بدون تحديد":
-                    pattern = regex_patterns[regex_type]
-                    valid_mask = df[regex_col].astype(str).str.match(pattern, na=False)
-                    invalid_format = df[~valid_mask & df[regex_col].notnull()]
-                    if len(invalid_format) > 0: errors[f'صيغة خاطئة في ({regex_col})'] = invalid_format
+                    miss = df[df[mandatory_cols].isnull().any(axis=1)]
+                    if not miss.empty: errs['بيانات إلزامية مفقودة'] = miss
 
-                for rule in st.session_state.compare_rules:
-                    rule_id = rule['id']
-                    c1, op, c2 = st.session_state[f"comp1_{rule_id}"], st.session_state[f"op_{rule_id}"], st.session_state[f"comp2_{rule_id}"]
+                # 3. أنماط
+                if v_cols:
+                    pat = regex_patterns[v_pattern]
+                    for col in v_cols:
+                        bad = df[~df[col].astype(str).str.match(pat, na=False) & df[col].notnull()]
+                        if not bad.empty: errs[f'صيغة خاطئة في ({col})'] = bad
+
+                # 4. مقارنات
+                for r in st.session_state.compare_rules:
+                    rid = r['id']
+                    c1, op, c2 = st.session_state[f"c1_{rid}"], st.session_state[f"op_{rid}"], st.session_state[f"c2_{rid}"]
                     try:
-                        if ">" in op: err_mask = ~(df[c1] > df[c2])
-                        elif "<" in op: err_mask = ~(df[c1] < df[c2])
-                        elif "==" in op: err_mask = ~(df[c1] == df[c2])
-                        else: err_mask = ~(df[c1] != df[c2])
-                        err_mask = err_mask & df[c1].notnull() & df[c2].notnull()
-                        if err_mask.sum() > 0: errors[f'تناقض: {c1} {op} {c2}'] = df[err_mask]
+                        mask = pd.eval(f"~(df['{c1}'] {op} df['{c2}'])")
+                        bad = df[mask & df[c1].notnull() & df[c2].notnull()]
+                        if not bad.empty: errs[f'تناقض: {c1} {op} {c2}'] = bad
                     except: pass
 
-                for rule in st.session_state.dynamic_rules:
-                    rule_id = rule['id']
-                    c_col, c_val, t_col = st.session_state[f"cond_col_{rule_id}"], st.session_state[f"cond_val_{rule_id}"], st.session_state[f"target_col_{rule_id}"]
-                    cross_mask = (df[c_col] == c_val) & (df[t_col].isnull())
-                    if cross_mask.sum() > 0: errors[f'مخالفة شرط ({c_col}={c_val})'] = df[cross_mask]
+                # 5. شرطي
+                for r in st.session_state.dynamic_rules:
+                    rid = r['id']
+                    c_col, c_type = st.session_state[f"cond_col_{rid}"], st.session_state[f"cond_type_{rid}"]
+                    t_col, t_type = st.session_state[f"target_col_{rid}"], st.session_state[f"target_type_{rid}"]
+                    
+                    if c_type == "يساوي قيمة": c_mask = (df[c_col] == st.session_state[f"cond_val_{rid}"])
+                    elif c_type == "فارغ (Empty)": c_mask = df[c_col].isnull()
+                    else: c_mask = df[c_col].notnull()
+                    
+                    t_err = df[t_col].isnull() if t_type == "ليس فارغاً" else df[t_col].notnull()
+                    bad = df[c_mask & t_err]
+                    if not bad.empty: errs[f'مخالفة شرط: {c_col} -> {t_col}'] = bad
 
-            if not errors:
-                st.success("🎉 بياناتك مطابقة تماماً لجميع المعايير والشروط!")
-                st.balloons()
+            if not errs:
+                st.success("🎉 بياناتك مطابقة بنسبة 100%!")
             else:
-                total_error_records = sum([len(e) for e in errors.values()])
-                quality_score = max(0, 100 - ((total_error_records / (total_rows * max(len(errors), 1))) * 100))
-                st.markdown(f'<div class="metric-card"><h3>مؤشر جودة البيانات الشامل</h3><h1>{quality_score:.1f}%</h1></div><br>', unsafe_allow_html=True)
+                total_bad = sum(len(v) for v in errs.values())
+                score = max(0, 100 - (total_bad / (total * max(1, len(errs))) * 100))
+                st.markdown(f'<div class="metric-card"><h3>جودة البيانات</h3><h1>{score:.1f}%</h1></div>', unsafe_allow_html=True)
                 
-                error_summary = pd.DataFrame({'نوع الخطأ': list(errors.keys()), 'عدد السجلات المتأثرة': [len(e) for e in errors.values()]})
-                
-                # إنشاء الرسم البياني لحفظه في الـ PDF
-                fig = px.bar(error_summary, x='نوع الخطأ', y='عدد السجلات المتأثرة', color='نوع الخطأ', text_auto=True, title="Visual Error Summary")
+                err_summary = pd.DataFrame({'نوع الخطأ': list(errs.keys()), 'عدد السجلات المتأثرة': [len(v) for v in errs.values()]})
+                fig = px.bar(err_summary, x='نوع الخطأ', y='عدد السجلات المتأثرة', color='نوع الخطأ', text_auto=True)
                 st.plotly_chart(fig, use_container_width=True)
 
-                st.subheader("🖨️ طباعة التقرير الاحترافي")
-                with st.spinner('جاري إنشاء تقرير PDF يحتوي على رسومات بيانية...'):
-                    pdf_data = create_pdf(quality_score, error_summary, total_rows, error_chart=fig)
-                    st.download_button("📥 تحميل التقرير التفصيلي (PDF + Charts)", data=pdf_data, file_name="Comprehensive_DQ_Report.pdf", mime="application/pdf", use_container_width=True)
+                st.subheader("🖨️ التقرير الاحترافي")
+                pdf_bytes = create_pdf(score, err_summary, total, fig)
+                st.download_button("📥 تحميل التقرير (PDF)", data=pdf_bytes, file_name="DQ_Report.pdf", mime="application/pdf")
 
-                for err_name, err_df in errors.items():
-                    with st.expander(f"🔴 {err_name} ({len(err_df)} سجل)"):
-                        st.dataframe(err_df, use_container_width=True)
-                        csv = err_df.to_csv(index=False).encode('utf-8-sig')
-                        st.download_button(f"📥 تحميل سجلات: {err_name}", data=csv, file_name=f"{err_name}.csv", mime="text/csv", key=f"dl_{err_name}")
+                for k, v in errs.items():
+                    with st.expander(f"🔴 {k} ({len(v)} سجل)"):
+                        st.dataframe(v, use_container_width=True)
+                        st.download_button(f"تحميل CSV", v.to_csv(index=False).encode('utf-8-sig'), f"{k}.csv", "text/csv", key=f"d_{k}")
