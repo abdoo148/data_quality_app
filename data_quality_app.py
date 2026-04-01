@@ -11,6 +11,10 @@ from fpdf import FPDF
 # ==========================================
 def create_pdf(quality_score, error_summary, total_rows, rules_applied, df_profile):
     """إنشاء ملف PDF نصي يحتوي على جداول وإحصائيات مفصلة (حل جذري ومستقر)"""
+    def clean(txt):
+        # استبدال الحروف العربية والرموز غير المدعومة في الخط الافتراضي لتجنب انهيار FPDF
+        return str(txt).encode('latin-1', 'replace').decode('latin-1')
+
     pdf = FPDF()
     pdf.add_page()
     
@@ -50,7 +54,7 @@ def create_pdf(quality_score, error_summary, total_rows, rules_applied, df_profi
     
     pdf.set_font('Arial', '', 9)
     for _, row in df_profile.iterrows():
-        pdf.cell(80, 8, txt=str(row['العمود'])[:40], border=1)
+        pdf.cell(80, 8, txt=clean(str(row['العمود'])[:40]), border=1)
         pdf.cell(50, 8, txt=f"{row['القيم المفقودة (%)']}%", border=1)
         pdf.cell(60, 8, txt=str(row['القيم الفريدة']), border=1, ln=1)
     pdf.ln(10)
@@ -62,7 +66,7 @@ def create_pdf(quality_score, error_summary, total_rows, rules_applied, df_profi
     pdf.ln(5)
     pdf.set_font('Arial', '', 10)
     for rule in rules_applied:
-        pdf.multi_cell(0, 6, txt=f"- {rule}")
+        pdf.multi_cell(0, 6, txt=clean(f"- {rule}"))
     pdf.ln(5)
 
     # 4. Detailed Issue Summary
@@ -86,7 +90,7 @@ def create_pdf(quality_score, error_summary, total_rows, rules_applied, df_profi
             elif 'نطاق' in err_txt: err_txt = "Out of Range"
             elif 'مخالفة' in err_txt: err_txt = "Logic Violation"
             
-            pdf.cell(140, 10, txt=err_txt[:70], border=1)
+            pdf.cell(140, 10, txt=clean(err_txt[:70]), border=1)
             pdf.cell(50, 10, txt=str(row['عدد السجلات المتأثرة']), border=1, ln=1, align='C')
     
     pdf_output = pdf.output()
