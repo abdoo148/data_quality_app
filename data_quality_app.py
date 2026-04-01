@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import uuid
+import re
 from fpdf import FPDF
 
 # ==========================================
@@ -31,66 +33,66 @@ def create_pdf(quality_score, error_summary, total_rows):
         
         pdf.set_font('Arial', '', 12)
         for index, row in error_summary.iterrows():
-            err_type = row['نوع الخطأ']
+            err_type = str(row['نوع الخطأ'])
             
-            # ترجمة أنواع الأخطاء للإنجليزية للتقرير
-            trans_dict = {
-                'التكرار في المعرف الفريد': 'Duplicated Primary Key',
-                'بيانات إلزامية مفقودة': 'Missing Mandatory Data',
-                'مخالفة الشرط المترابط': 'Cross-Logic Violation'
-            }
-            for k, v in trans_dict.items():
-                err_type = err_type.replace(k, v)
-                
-            if 'خارج النطاق المسموح' in err_type:
-                err_type = err_type.replace('خارج النطاق المسموح', 'Out of Allowed Range')
-            if 'قيم غير مسموحة في' in err_type:
-                err_type = err_type.replace('قيم غير مسموحة في', 'Invalid Values in')
-                
-            err_count = str(row['عدد الصفوف المتأثرة'])
+            # ترجمة أنواع الأخطاء للإنجليزية للتقرير (شاملة أخطاء V4)
+            if 'تكرار في المعرف الفريد' in err_type: err_type = 'Duplicated Primary Key'
+            elif 'بيانات إلزامية مفقودة' in err_type: err_type = 'Missing Mandatory Data'
+            elif 'صيغة خاطئة' in err_type: err_type = 'Invalid Format (Regex Mismatch)'
+            elif 'تناقض:' in err_type: err_type = 'Cross-Column Contradiction'
+            elif 'مخالفة شرط' in err_type: err_type = 'Cross-Logic Violation'
+            
+            # قص النص إذا كان طويلاً جداً حتى لا يشوه الجدول
+            err_type = err_type[:60] 
+            
+            err_count = str(row['عدد السجلات المتأثرة'])
             pdf.cell(130, 10, txt=err_type, border=1, align='L')
             pdf.cell(60, 10, txt=err_count, border=1, ln=1, align='C')
 
     return bytes(pdf.output())
 
 # ==========================================
-# 1. إعدادات الصفحة والتصميم (UI/UX)
+# 1. إعدادات الصفحة وتهيئة المتغيرات
 # ==========================================
-st.set_page_config(page_title="المُقيّم الذكي V2", page_icon="✨", layout="wide")
+st.set_page_config(page_title="المُقيّم الذكي V4", page_icon="🚀", layout="wide")
 
-# CSS مخصص لتحسين الواجهة ودعم اللغة العربية (RTL) والألوان
+if 'dynamic_rules' not in st.session_state:
+    st.session_state.dynamic_rules = []
+if 'compare_rules' not in st.session_state:
+    st.session_state.compare_rules = []
+
+def add_rule(): st.session_state.dynamic_rules.append({"id": str(uuid.uuid4())})
+def remove_rule(rule_id): st.session_state.dynamic_rules = [r for r in st.session_state.dynamic_rules if r['id'] != rule_id]
+
+def add_compare_rule(): st.session_state.compare_rules.append({"id": str(uuid.uuid4())})
+def remove_compare_rule(rule_id): st.session_state.compare_rules = [r for r in st.session_state.compare_rules if r['id'] != rule_id]
+
+# تنسيقات CSS
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap');
     * { font-family: 'Tajawal', sans-serif; }
     body { direction: RTL; text-align: right; }
-    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
-        font-size: 1.2rem;
-        font-weight: bold;
-    }
-    .metric-card {
-        background: linear-gradient(135deg, #f6d365 0%, #fda085 100%);
-        padding: 20px;
-        border-radius: 15px;
-        color: white;
-        text-align: center;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
+    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p { font-size: 1.1rem; font-weight: bold; }
+    .metric-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 15px; color: white; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
     .metric-card h3 { margin: 0; font-size: 1.5rem; }
-    .metric-card h1 { margin: 10px 0 0 0; font-size: 3rem; }
+    .metric-card h1 { margin: 10px 0 0 0; font-size: 3rem; font-weight: bold; }
+    .rule-container { border: 1px solid #e0e0e0; padding: 15px; border-radius: 8px; margin-bottom: 10px; background-color: #f8f9fa; border-right: 4px solid #764ba2; }
     </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. القائمة الجانبية (رفع الملفات والإعدادات)
+# 2. القائمة الجانبية
 # ==========================================
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/2875/2875071.png", width=100)
+    st.image("https://cdn-icons-png.flaticon.com/512/2875/2875071.png", width=80)
     st.title("إعدادات البيانات")
-    uploaded_file = st.file_uploader("📁 ارفع ملفك هنا (CSV/Excel)", type=['csv', 'xlsx'])
+    uploaded_file = st.file_uploader("📁 ارفع ملفك (CSV/Excel)", type=['csv', 'xlsx'])
     
-    st.markdown("---")
-    st.info("💡 **كيف يعمل التطبيق؟**\n1. ارفع الملف\n2. استكشف البيانات\n3. ضع القواعد\n4. احصل على التقرير التفاعلي")
+    if st.button("🗑️ إعادة ضبط كل القواعد"):
+        st.session_state.dynamic_rules = []
+        st.session_state.compare_rules = []
+        st.rerun()
 
 @st.cache_data
 def load_data(file):
@@ -98,136 +100,194 @@ def load_data(file):
     else: return pd.read_excel(file)
 
 # ==========================================
-# 3. واجهة التطبيق الرئيسية (التبويبات)
+# 3. واجهة التطبيق
 # ==========================================
 if uploaded_file is None:
-    st.markdown("<h1 style='text-align: center; color: #888; margin-top: 100px;'>يرجى رفع ملف بيانات من القائمة الجانبية للبدء 👈</h1>", unsafe_allow_html=True)
+    st.info("يرجى رفع ملف بيانات من القائمة الجانبية للبدء 👈")
 else:
     df = load_data(uploaded_file)
     columns = df.columns.tolist()
-    numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
-    cat_cols = [c for c in df.columns if df[c].dtype == 'object' and df[c].nunique() < 20]
-
-    st.title(f"✨ تحليل بيانات: {uploaded_file.name}")
+    numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+    
+    st.title(f"🚀 تحليل بيانات: {uploaded_file.name}")
     
     tab1, tab2, tab3, tab4 = st.tabs([
-        "👁️ 1. نظرة عامة", 
-        "📋 2. القواعد الأساسية", 
-        "🧠 3. القواعد المترابطة (متقدم)", 
+        "📊 1. التحليل الإحصائي (Profiling)", 
+        "🛡️ 2. القواعد الأساسية والصيغ", 
+        "🔗 3. القواعد المنطقية المترابطة", 
         "🎯 4. لوحة النتائج"
     ])
 
     # ---------------------------------------------------------
-    # التبويب الأول: نظرة عامة
+    # التبويب الأول: التحليل الإحصائي (Data Profiling)
     # ---------------------------------------------------------
     with tab1:
-        st.header("استكشاف سريع للبيانات")
-        col1, col2, col3 = st.columns(3)
-        col1.metric("إجمالي الصفوف", f"{len(df):,}")
-        col2.metric("إجمالي الأعمدة", len(columns))
-        col3.metric("عدد الخلايا الفارغة الكلي", df.isnull().sum().sum())
+        st.header("الفحص الإحصائي العميق للبيانات")
         
-        st.dataframe(df.head(10), use_container_width=True)
+        col1, col2, col3 = st.columns(3)
+        col1.metric("إجمالي السجلات", f"{len(df):,}")
+        col2.metric("إجمالي الأعمدة", len(columns))
+        col3.metric("الخلايا المفقودة كلياً", f"{df.isnull().sum().sum():,}")
+        
+        st.markdown("---")
+        st.subheader("تحليل جودة الأعمدة")
+        
+        profile_df = pd.DataFrame({
+            'العمود': columns,
+            'نوع البيانات': [str(df[c].dtype) for c in columns],
+            'القيم المفقودة (%)': [(df[c].isnull().sum() / len(df) * 100).round(2) for c in columns],
+            'القيم الفريدة': [df[c].nunique() for c in columns]
+        })
+        st.dataframe(profile_df.style.background_gradient(subset=['القيم المفقودة (%)'], cmap='Reds'), use_container_width=True)
+
+        if numeric_cols:
+            st.subheader("التوزيع الإحصائي (للأرقام)")
+            selected_num_col = st.selectbox("اختر عموداً رقمياً لعرض توزيعه:", numeric_cols)
+            fig_hist = px.histogram(df, x=selected_num_col, marginal="box", title=f"توزيع البيانات في عمود: {selected_num_col}")
+            st.plotly_chart(fig_hist, use_container_width=True)
 
     # ---------------------------------------------------------
-    # التبويب الثاني: القواعد الأساسية
+    # التبويب الثاني: الأساسيات والصيغ (Regex)
     # ---------------------------------------------------------
     with tab2:
-        st.header("إعدادات الجودة الأساسية")
+        st.header("معايير الجودة الأساسية")
         col_a, col_b = st.columns(2)
-        
         with col_a:
-            st.subheader("🔑 التفرد (Uniqueness)")
-            primary_key = st.selectbox("اختر المعرف الفريد (الذي لا يجب أن يتكرر):", ["بدون تحديد"] + columns)
-            
+            st.subheader("🔑 التفرد")
+            primary_key = st.selectbox("اختر المعرف الفريد:", ["بدون تحديد"] + columns)
         with col_b:
-            st.subheader("📝 الاكتمال (Completeness)")
-            mandatory_cols = st.multiselect("اختر الأعمدة الإلزامية (لا تقبل الفراغ):", columns, default=columns)
+            st.subheader("📝 الاكتمال")
+            mandatory_cols = st.multiselect("اختر الأعمدة الإلزامية:", columns)
 
         st.markdown("---")
-        st.subheader("🔢 النطاق المنطقي للأرقام")
-        if numeric_cols:
-            range_col = st.selectbox("اختر عموداً رقمياً لتحديد نطاقه المسموح:", ["بدون تحديد"] + numeric_cols)
-            if range_col != "بدون تحديد":
-                min_val, max_val = st.slider(
-                    f"حدد النطاق المسموح لـ {range_col}", 
-                    float(df[range_col].min()), float(df[range_col].max()), 
-                    (float(df[range_col].min()), float(df[range_col].max()))
-                )
-        else:
-            range_col = "بدون تحديد"
-            st.info("لا توجد أعمدة رقمية في الملف.")
+        st.subheader("أรูปแบบ التحقق من الصيغ (Pattern Validation)")
+        st.write("التأكد من أن البيانات مكتوبة بصيغة صحيحة (مثل البريد الإلكتروني أو الأرقام).")
+        
+        regex_patterns = {
+            "بريد إلكتروني (Email)": r'^[\w\.-]+@[\w\.-]+\.\w+$',
+            "أرقام فقط (Digits)": r'^\d+$',
+            "نصوص فقط (Letters)": r'^[a-zA-Zأ-ي\s]+$',
+        }
+        
+        col_regex1, col_regex2 = st.columns(2)
+        with col_regex1:
+            regex_col = st.selectbox("اختر العمود المطلوب التحقق منه:", ["بدون تحديد"] + columns, key='regex_col')
+        with col_regex2:
+            regex_type = st.selectbox("اختر الصيغة المطلوبة:", list(regex_patterns.keys()), key='regex_type')
 
     # ---------------------------------------------------------
-    # التبويب الثالث: القواعد المنطقية المترابطة
+    # التبويب الثالث: القواعد المترابطة والمقارنات
     # ---------------------------------------------------------
     with tab3:
-        st.header("بناء قواعد عمل معقدة ومترابطة")
+        st.header("المحرك المنطقي المتقدم")
         
-        col_c, col_d = st.columns(2)
+        st.subheader("أولاً: مقارنة الأعمدة (Cross-Column Comparison)")
+        st.button("➕ إضافة قاعدة مقارنة", on_click=add_compare_rule, type="secondary")
         
-        with col_c:
-            st.subheader("🏷️ تقييد القيم النصية")
-            if cat_cols:
-                target_cat_col = st.selectbox("اختر عمود تصنيفي (مثال: الحالة، الجنس، القسم):", ["بدون تحديد"] + cat_cols, index=1 if cat_cols else 0)
-                if target_cat_col != "بدون تحديد":
-                    unique_vals = df[target_cat_col].dropna().unique().tolist()
-                    allowed_vals = st.multiselect(f"ما هي القيم الصحيحة فقط لعمود ({target_cat_col})؟", unique_vals, default=unique_vals)
-            else:
-                target_cat_col = "بدون تحديد"
-                st.info("لا توجد أعمدة تصنيفية مناسبة في الملف.")
+        for index, rule in enumerate(st.session_state.compare_rules):
+            st.markdown(f"<div class='rule-container'>", unsafe_allow_html=True)
+            col1, col2, col3, col4 = st.columns([3, 2, 3, 1])
+            rule_id = rule['id']
+            with col1:
+                comp_col1 = st.selectbox("العمود الأول:", columns, key=f"comp1_{rule_id}")
+            with col2:
+                operator = st.selectbox("يجب أن يكون:", ["> (أكبر من)", "< (أصغر من)", "== (يساوي)", "!= (لا يساوي)"], key=f"op_{rule_id}")
+            with col3:
+                comp_col2 = st.selectbox("مقارنة بـ العمود الثاني:", columns, key=f"comp2_{rule_id}")
+            with col4:
+                st.write("")
+                st.write("")
+                st.button("❌", key=f"del_c_{rule_id}", on_click=remove_compare_rule, args=(rule_id,))
+            st.markdown("</div>", unsafe_allow_html=True)
 
-        with col_d:
-            st.subheader("🔗 الارتباط الشرطي بين عمودين")
-            st.write("مثال: **إذا** كان عمود [الحالة] يساوي [مغلق] **فإن** عمود [تاريخ الإغلاق] يجب أن يكون ممتلئاً.")
-            
-            enable_cross_logic = st.checkbox("تفعيل القاعدة الشرطية")
-            if enable_cross_logic:
-                cond_col = st.selectbox("إذا كان عمود (الشرط):", columns, key="cond_col")
-                cond_val = st.selectbox("يساوي القيمة:", df[cond_col].dropna().unique().tolist(), key="cond_val")
-                target_cond_col = st.selectbox("فإن عمود (النتيجة) يجب ألا يكون فارغاً:", columns, key="target_cond_col")
+        st.markdown("---")
+        
+        st.subheader("ثانياً: الترابط الشرطي (If This Then That)")
+        st.button("➕ إضافة قاعدة شرطية", on_click=add_rule, type="secondary")
+        
+        for index, rule in enumerate(st.session_state.dynamic_rules):
+            st.markdown(f"<div class='rule-container'>", unsafe_allow_html=True)
+            col1, col2, col3, col4 = st.columns([3, 3, 3, 1])
+            rule_id = rule['id']
+            with col1:
+                cond_col = st.selectbox("إذا كان العمود:", columns, key=f"cond_col_{rule_id}")
+            with col2:
+                unique_vals = df[cond_col].dropna().unique().tolist() if cond_col else []
+                cond_val = st.selectbox("يساوي القيمة:", unique_vals, key=f"cond_val_{rule_id}")
+            with col3:
+                target_col = st.selectbox("فإن (النتيجة) يجب ألا يكون فارغاً:", columns, key=f"target_col_{rule_id}")
+            with col4:
+                st.write("")
+                st.write("")
+                st.button("❌", key=f"del_{rule_id}", on_click=remove_rule, args=(rule_id,))
+            st.markdown("</div>", unsafe_allow_html=True)
 
     # ---------------------------------------------------------
-    # التبويب الرابع: لوحة النتائج التفاعلية وتصدير PDF
+    # التبويب الرابع: التحليل والنتائج مع التصدير (PDF)
     # ---------------------------------------------------------
     with tab4:
         st.header("📊 التقرير النهائي لجودة البيانات")
-        analyze_btn = st.button("🚀 تشغيل محرك التحليل الآن", use_container_width=True, type="primary")
+        analyze_btn = st.button("🚀 تشغيل محرك التحليل الشامل", use_container_width=True, type="primary")
         
         if analyze_btn:
             total_rows = len(df)
             errors = {} 
             
-            with st.spinner('جاري تحليل البيانات وإعداد التقرير...'):
-                # الفحوصات
+            with st.spinner('جاري طحن البيانات وفحص القواعد المعقدة...'):
+                # 1. الأساسيات
                 if primary_key != "بدون تحديد":
                     dup_mask = df.duplicated(subset=[primary_key], keep=False)
-                    if dup_mask.sum() > 0: errors['التكرار في المعرف الفريد'] = df[dup_mask]
+                    if dup_mask.sum() > 0: errors['تكرار في المعرف الفريد'] = df[dup_mask]
                 
                 if mandatory_cols:
                     miss_mask = df[mandatory_cols].isnull().any(axis=1)
                     if miss_mask.sum() > 0: errors['بيانات إلزامية مفقودة'] = df[miss_mask]
 
-                if range_col != "بدون تحديد":
-                    range_mask = (df[range_col] < min_val) | (df[range_col] > max_val)
-                    if range_mask.sum() > 0: errors[f'خارج النطاق المسموح ({range_col})'] = df[range_mask]
+                # 2. التحقق من الصيغ (Regex)
+                if regex_col != "بدون تحديد":
+                    pattern = regex_patterns[regex_type]
+                    valid_mask = df[regex_col].astype(str).str.match(pattern, na=False)
+                    not_null_mask = df[regex_col].notnull()
+                    invalid_format = df[~valid_mask & not_null_mask]
+                    if len(invalid_format) > 0:
+                        errors[f'صيغة خاطئة ({regex_col}) لا تطابق {regex_type}'] = invalid_format
 
-                if cat_cols and target_cat_col != "بدون تحديد" and allowed_vals:
-                    cat_mask = ~df[target_cat_col].isin(allowed_vals) & df[target_cat_col].notnull()
-                    if cat_mask.sum() > 0: errors[f'قيم غير مسموحة في ({target_cat_col})'] = df[cat_mask]
+                # 3. قواعد المقارنة (Cross-Column)
+                for index, rule in enumerate(st.session_state.compare_rules):
+                    rule_id = rule['id']
+                    c1 = st.session_state[f"comp1_{rule_id}"]
+                    op = st.session_state[f"op_{rule_id}"]
+                    c2 = st.session_state[f"comp2_{rule_id}"]
+                    try:
+                        if ">" in op: err_mask = ~(df[c1] > df[c2]) & df[c1].notnull() & df[c2].notnull()
+                        elif "<" in op: err_mask = ~(df[c1] < df[c2]) & df[c1].notnull() & df[c2].notnull()
+                        elif "==" in op: err_mask = ~(df[c1] == df[c2]) & df[c1].notnull() & df[c2].notnull()
+                        else: err_mask = ~(df[c1] != df[c2]) & df[c1].notnull() & df[c2].notnull()
+                        
+                        if err_mask.sum() > 0:
+                            errors[f'تناقض: {c1} {op} {c2}'] = df[err_mask]
+                    except Exception as e:
+                        st.error(f"خطأ في مقارنة {c1} مع {c2}. تأكد من توافق أنواع البيانات.")
 
-                if enable_cross_logic:
-                    cross_mask = (df[cond_col] == cond_val) & (df[target_cond_col].isnull())
-                    if cross_mask.sum() > 0: errors['مخالفة الشرط المترابط'] = df[cross_mask]
+                # 4. الترابط الشرطي
+                for index, rule in enumerate(st.session_state.dynamic_rules):
+                    rule_id = rule['id']
+                    c_col = st.session_state[f"cond_col_{rule_id}"]
+                    c_val = st.session_state[f"cond_val_{rule_id}"]
+                    t_col = st.session_state[f"target_col_{rule_id}"]
+                    
+                    cross_mask = (df[c_col] == c_val) & (df[t_col].isnull())
+                    if cross_mask.sum() > 0:
+                        errors[f'مخالفة شرط ({c_col}={c_val} -> {t_col} مفقود)'] = df[cross_mask]
 
             # عرض النتائج
             if not errors:
-                st.success("🎉 ممتاااااز! بياناتك نظيفة تماماً وتتوافق مع جميع القواعد المعقدة التي حددتها.")
+                st.success("🎉 مذهل! اجتازت بياناتك جميع الفحوصات الصارمة بنجاح.")
                 st.balloons()
                 quality_score = 100.0
-                error_summary = pd.DataFrame(columns=['نوع الخطأ', 'عدد الصفوف المتأثرة'])
+                error_summary = pd.DataFrame(columns=['نوع الخطأ', 'عدد السجلات المتأثرة'])
                 
-                # زر التحميل لـ PDF للبيانات السليمة
+                # تحميل PDF بحالة النجاح 100%
                 pdf_data = create_pdf(quality_score, error_summary, total_rows)
                 st.download_button(
                     label="📥 تحميل تقرير الجودة (PDF)",
@@ -236,25 +296,20 @@ else:
                     mime="application/pdf"
                 )
             else:
-                total_errors = sum([len(e) for e in errors.values()])
-                # حساب تقريبي للدرجة
-                quality_score = max(0, 100 - ((total_errors / (total_rows * max(len(errors), 1))) * 100))
+                total_error_records = sum([len(e) for e in errors.values()])
+                quality_score = max(0, 100 - ((total_error_records / (total_rows * max(len(errors), 1))) * 100))
                 
                 st.markdown(f"""
                 <div class="metric-card">
-                    <h3>مؤشر جودة البيانات (Data Quality Score)</h3>
+                    <h3>المؤشر الشامل لجودة البيانات (DQ Score)</h3>
                     <h1>{quality_score:.1f}%</h1>
                 </div>
+                <br>
                 """, unsafe_allow_html=True)
                 
-                st.markdown("<br>", unsafe_allow_html=True)
+                error_summary = pd.DataFrame({'نوع الخطأ': list(errors.keys()), 'عدد السجلات المتأثرة': [len(e) for e in errors.values()]})
                 
-                error_summary = pd.DataFrame({
-                    'نوع الخطأ': list(errors.keys()),
-                    'عدد الصفوف المتأثرة': [len(e) for e in errors.values()]
-                })
-                
-                # تصدير التقرير PDF
+                # قسم تصدير التقرير PDF
                 st.markdown("---")
                 st.subheader("🖨️ طباعة النتائج")
                 with st.spinner('جاري إنشاء ملف PDF...'):
@@ -269,22 +324,13 @@ else:
                 st.markdown("---")
 
                 # رسم بياني
-                fig = px.bar(error_summary, x='نوع الخطأ', y='عدد الصفوف المتأثرة', 
-                             color='نوع الخطأ', title="توزيع أخطاء جودة البيانات", text_auto=True)
+                fig = px.bar(error_summary, x='نوع الخطأ', y='عدد السجلات المتأثرة', color='نوع الخطأ', text_auto=True, title="ملخص الأخطاء المكتشفة")
                 fig.update_layout(showlegend=False, font=dict(family="Tajawal"))
                 st.plotly_chart(fig, use_container_width=True)
 
-                # تفاصيل الأخطاء
-                st.subheader("🔍 تفاصيل السجلات التي تحتوي على أخطاء:")
+                st.subheader("🔍 تفاصيل الأخطاء للتحميل:")
                 for err_name, err_df in errors.items():
                     with st.expander(f"🔴 {err_name} ({len(err_df)} سجل)"):
                         st.dataframe(err_df, use_container_width=True)
-                        
                         csv = err_df.to_csv(index=False).encode('utf-8-sig')
-                        st.download_button(
-                            label=f"📥 تحميل سجلات خطأ ({err_name})",
-                            data=csv,
-                            file_name=f"errors_{err_name}.csv",
-                            mime="text/csv",
-                            key=f"btn_{err_name}"
-                        )
+                        st.download_button(label="📥 تحميل لتصحيح البيانات", data=csv, file_name=f"errors_{err_name}.csv", mime="text/csv", key=f"dl_{err_name}")
