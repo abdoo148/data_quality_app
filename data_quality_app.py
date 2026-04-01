@@ -66,7 +66,8 @@ def create_pdf(quality_score, error_summary, total_rows, rules_applied, df_profi
     pdf.ln(5)
     pdf.set_font('Arial', '', 10)
     for rule in rules_applied:
-        pdf.multi_cell(0, 6, txt=clean(f"- {rule}"))
+        # استخدام cell بدلاً من multi_cell وقص النص الطويل جداً لتجنب خطأ المساحة الأفقية
+        pdf.cell(0, 6, txt=clean(f"- {rule}")[:95], ln=1)
     pdf.ln(5)
 
     # 4. Detailed Issue Summary
